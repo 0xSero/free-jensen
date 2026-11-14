@@ -10,7 +10,8 @@ body:
         Signatures are collected for public sentiment analysis only and carry no legal or corporate weight.
 
         A bot counts your signature, comments, and closes this issue, usually within a minute or two.
-        Each GitHub account counts once. Accounts must be at least 7 days old. This issue is public.
+        Each GitHub account counts once. Accounts must be at least 7 days old.
+        **This issue is public.** We never see your email or phone number, so please don't type them here.
   - type: input
     id: country
     attributes:
@@ -23,7 +24,7 @@ body:
     id: reason
     attributes:
       label: Why do you support this? (optional)
-      description: A sentence or two. Used only for sentiment analysis.
+      description: "A sentence or two, used for sentiment analysis. This is PUBLIC: don't include your email, phone number, or any other personal details."
     validations:
       required: false
   - type: checkboxes
