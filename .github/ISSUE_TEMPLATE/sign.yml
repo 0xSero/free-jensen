@@ -1,0 +1,35 @@
+name: Sign the petition
+description: Add your signature (one per GitHub account). Independent fan petition, not affiliated with NVIDIA.
+title: "Signature"
+labels: ["signature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Independent, fan-run petition. Not affiliated with, endorsed by, or sponsored by NVIDIA Corporation.**
+        Signatures are collected for public sentiment analysis only and carry no legal or corporate weight.
+
+        A bot counts your signature, comments, and closes this issue, usually within a minute or two.
+        Each GitHub account counts once. Accounts must be at least 7 days old. This issue is public.
+  - type: input
+    id: country
+    attributes:
+      label: Country code
+      description: Your two-letter ISO country code, for example US, DE, JP, or TW. The petition page fills this in for you.
+      placeholder: US
+    validations:
+      required: true
+  - type: textarea
+    id: reason
+    attributes:
+      label: Why do you support this? (optional)
+      description: A sentence or two. Used only for sentiment analysis.
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I am signing once, on my own behalf, and I understand this petition is not affiliated with NVIDIA.
+          required: true
