@@ -2,25 +2,27 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>Reinstate Jensen</title>
+<meta name="theme-color" content="#000000">
+<title>Free Jensen</title>
 <meta name="description" content="Independent fan-run petition calling for Jensen Huang to be reinstated as CEO of NVIDIA. Not affiliated with NVIDIA. Collected for public sentiment analysis.">
-<meta property="og:title" content="Reinstate Jensen: a global petition">
-<meta property="og:description" content="Sign once with GitHub and watch the world turn green. Independent and not affiliated with NVIDIA.">
+<meta property="og:title" content="Free Jensen: a global petition to reinstate Jensen Huang">
+<meta property="og:description" content="One click to sign, no account needed. Watch the world turn green live. Independent and not affiliated with NVIDIA.">
+<meta property="og:url" content="https://free-jensen.pages.dev/">
+<link rel="preload" href="fonts/barlow-condensed-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M0 0h32v32H0z' fill='%2376B900'/%3E%3Cpath d='M8 22l8-12 8 12z' fill='%23000'/%3E%3C/svg%3E">
 </head>
 <body>
 
 <div class="disclaimer-strip" role="note">
-  <strong>Independent fan petition.</strong> We are not affiliated with, endorsed by, or sponsored by NVIDIA Corporation. Signatures are collected for public sentiment analysis only.
+  <strong>Independent fan petition.</strong> Not affiliated with, endorsed by, or sponsored by NVIDIA Corporation. Collected for public sentiment analysis only.
 </div>
 
 <header class="topbar">
   <div class="wrap topbar-inner">
-    <span class="brand"><span class="brand-mark" aria-hidden="true"></span>REINSTATE<span class="g">JENSEN</span></span>
+    <span class="brand"><span class="brand-mark" aria-hidden="true"></span>FREE<span class="g">JENSEN</span></span>
     <a class="toplink" href="#how">How it works</a>
   </div>
 </header>
@@ -28,7 +30,7 @@
 <main>
   <section class="hero wrap">
     <div class="hero-copy">
-      <p class="eyebrow">Global petition · Sentiment index</p>
+      <p class="eyebrow"><span class="live-dot" id="live-dot" aria-hidden="true"></span>Live global petition</p>
       <h1>Bring Jensen<br><span class="g">back.</span></h1>
       <p class="lede">Jensen Huang co-founded NVIDIA in 1993 and led it for 33 years. He resigned as CEO in November 2026. This petition asks NVIDIA's board to reinstate him, and it measures how much support that idea has around the world.</p>
 
@@ -37,16 +39,31 @@
         <div class="counter-side"><span id="ncountries">—</span><span class="counter-label">countries</span></div>
       </div>
 
-      <form class="sign-card" id="sign-form" novalidate>
-        <label for="country" class="field-label">Where are you signing from?</label>
-        <div class="select-wrap">
-          <select id="country" required></select>
+      <div class="sign-card" id="sign-card">
+        <div id="sign-form">
+          <p class="where">Signing from <strong id="where">…</strong><span class="where-note">detected from your network</span></p>
+
+          <label for="reason" class="field-label">Why do you support this? <span class="opt">Optional · private</span></label>
+          <textarea id="reason" maxlength="280" rows="2" placeholder="A sentence or two, used only for aggregate sentiment analysis"></textarea>
+          <p class="hint"><span>Don't include your name, email, or phone number.</span><span class="char-count"><span id="reason-count">0</span>/280</span></p>
+
+          <div id="turnstile" class="turnstile"></div>
+
+          <button id="sign-btn" class="btn" type="button" disabled>
+            <span id="sign-label">Loading…</span>
+          </button>
+          <p class="fine">By signing you confirm you're signing once, for yourself, and you understand this petition isn't affiliated with NVIDIA. No account, name, email, or phone needed.</p>
+          <p class="error" id="sign-error" role="alert" hidden></p>
         </div>
-        <a id="sign-btn" class="btn" href="#" target="_blank" rel="noopener noreferrer">
-          Sign with GitHub <span aria-hidden="true">→</span>
-        </a>
-        <p class="fine">You'll finish signing on a GitHub form. Each GitHub account counts <strong>once</strong>. Your GitHub username and country are public. We never receive your email or phone number. Signatures are usually counted in under two minutes.</p>
-      </form>
+
+        <div id="signed" class="signed" hidden>
+          <div class="check" aria-hidden="true"></div>
+          <div>
+            <p class="signed-title">You've signed. Thank you!</p>
+            <p class="signed-sub" id="signed-sub">Your signature is on the map.</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="globe-panel">
@@ -59,7 +76,7 @@
     </div>
   </section>
 
-  <section class="wrap board-section">
+  <section class="section wrap">
     <div class="section-head">
       <h2>Leading countries</h2>
       <span class="rule"></span>
@@ -67,7 +84,7 @@
     <ol id="board" class="board"><li class="board-empty">No signatures yet. Be the first.</li></ol>
   </section>
 
-  <section class="wrap how" id="how">
+  <section class="section wrap" id="how">
     <div class="section-head">
       <h2>How it works</h2>
       <span class="rule"></span>
@@ -75,18 +92,18 @@
     <div class="cards">
       <article class="card">
         <span class="num">01</span>
-        <h3>One account, one signature</h3>
-        <p>You sign through a GitHub issue form. Each signature is tied to your GitHub account's permanent ID, so renaming your account won't let you sign again. Duplicates are rejected automatically.</p>
+        <h3>One person, one signature</h3>
+        <p>Every signature passes a Cloudflare Turnstile human check. Each browser can sign once, and each network is capped at a few signatures a day, so the count can't be stuffed by bots or repeat clicks.</p>
       </article>
       <article class="card">
         <span class="num">02</span>
         <h3>Counted one at a time</h3>
-        <p>A GitHub Actions bot processes signatures strictly in sequence, one run at a time, so no two signatures can be counted at the same moment and none overwrite each other. Bots, organizations, and accounts less than 7 days old are refused.</p>
+        <p>Each signature is a single atomic database write. The rate check, the signature, and the country tally all commit together or not at all, so no two signatures can collide or be lost. Counts update live for everyone within seconds.</p>
       </article>
       <article class="card">
         <span class="num">03</span>
-        <h3>Open and auditable</h3>
-        <p>The code, the count, and every signature issue are public on GitHub. Anyone can check the tally. This page collects no cookies, uses no trackers, and stores no personal data beyond what you post on GitHub.</p>
+        <h3>Private by design</h3>
+        <p>We never ask for your name, email, or phone number, and we never store your IP address. We keep only a one-way keyed hash of it for rate limiting. Your country comes from your network. Your optional comment stays private and is used only for aggregate sentiment analysis.</p>
       </article>
     </div>
   </section>
@@ -95,12 +112,13 @@
 <footer class="footer">
   <div class="wrap">
     <p><strong>Disclaimer.</strong> This is an independent, fan-run project. It is not affiliated with, endorsed by, sponsored by, or connected to NVIDIA Corporation, its board of directors, or Jensen Huang. "NVIDIA" is a trademark of NVIDIA Corporation and is used here only to identify the company. The colors are a fan tribute, and no NVIDIA logos are used.</p>
-    <p>Signatures are gathered for <strong>public sentiment analysis</strong>. They carry no legal, shareholder, or corporate weight. Country is self-reported. The signature count reflects GitHub users who chose to sign and is not a scientific poll.</p>
-    <p class="footer-links"><a id="repo-link" href="#" rel="noopener noreferrer">Source &amp; raw data on GitHub</a></p>
+    <p>Signatures are gathered for <strong>public sentiment analysis</strong>. They carry no legal, shareholder, or corporate weight. Country is approximated from network location. This is not a scientific poll.</p>
+    <p class="footer-links"><a href="https://github.com/0xSero/free-jensen" rel="noopener noreferrer">Source code on GitHub</a></p>
   </div>
 </footer>
 
 <script src="globe.gl.min.js"></script>
 <script src="app.js"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=fjTurnstileReady" async defer></script>
 </body>
 </html>

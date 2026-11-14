@@ -1,31 +1,29 @@
 (() => {
   'use strict';
 
-  const REPO = '0xSero/free-jensen';
-  const POLL_MS = 60_000;
-
   const $ = (id) => document.getElementById(id);
   const fmt = new Intl.NumberFormat('en');
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const LS_KEY = 'fj_signed';
 
-  let countries = {};          // code -> name
+  let countries = {};                       // ISO code -> name (allowlist)
   let stats = { total: 0, countries: Object.create(null), updated: null };
   let features = [];
   let globe = null;
   let hovered = null;
-  let selected = null;
-
-  $('repo-link').href = `https://github.com/${REPO}`;
+  let mine = null;                          // viewer's detected country
+  let sitekey = null;
+  let tsWidget = null;
+  let tsToken = null;
+  let tsWaiters = [];
+  let tsErr = '';
+  let tsInteractive = false;
+  let submitting = false;
 
   // ---------- colour scale: more signatures = more green ----------
-  const STOPS = [
-    [0.00, [43, 67, 0]],     // deep olive
-    [0.55, [118, 185, 0]],   // brand green
-    [1.00, [200, 255, 74]],  // electric lime
-  ];
-  const ZERO = '#262626';
+  const STOPS = [[0, [43, 67, 0]], [0.55, [118, 185, 0]], [1, [200, 255, 74]]];
   function heat(n, max) {
-    if (!n) return ZERO;
+    if (!n) return '#262626';
     const t = max <= 1 ? 1 : Math.log1p(n) / Math.log1p(max);
     for (let i = 1; i < STOPS.length; i++) {
       const [t1, c1] = STOPS[i];
@@ -40,45 +38,19 @@
   }
   const maxCount = () => Math.max(0, ...Object.values(stats.countries));
   const countOf = (code) => stats.countries[code] || 0;
+  const nameOf = (code) => (code && Object.prototype.hasOwnProperty.call(countries, code) ? countries[code] : null);
 
-  // ---------- country picker + sign link ----------
-  function guessCountry() {
-    const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || ''];
-    for (const l of langs) {
-      const m = /[-_]([A-Za-z]{2})$/.exec(l);
-      if (m && countries[m[1].toUpperCase()]) return m[1].toUpperCase();
+  // ---------- stats intake (strictly validated) ----------
+  function ingest(s) {
+    if (!s || !Number.isSafeInteger(s.total) || s.total < 0 || !s.countries || typeof s.countries !== 'object') return;
+    const clean = Object.create(null);
+    for (const [code, n] of Object.entries(s.countries)) {
+      if (nameOf(code) && Number.isSafeInteger(n) && n > 0) clean[code] = n;
     }
-    return '';
-  }
-
-  function updateSignLink() {
-    const code = $('country').value;
-    const btn = $('sign-btn');
-    if (!code) {
-      btn.setAttribute('aria-disabled', 'true');
-      btn.href = '#';
-      return;
-    }
-    btn.removeAttribute('aria-disabled');
-    const p = new URLSearchParams({ template: 'sign.yml', title: 'Signature', country: code });
-    btn.href = `https://github.com/${REPO}/issues/new?${p}`;
-  }
-
-  function buildPicker() {
-    const sel = $('country');
-    const ph = new Option('Select your country…', '');
-    ph.disabled = true;
-    sel.add(ph);
-    for (const [code, name] of Object.entries(countries)) sel.add(new Option(name, code));
-    const g = guessCountry();
-    sel.value = g;
-    if (!g) ph.selected = true;
-    sel.addEventListener('change', () => {
-      updateSignLink();
-      focusCountry(sel.value);
-    });
-    $('sign-form').addEventListener('submit', (e) => e.preventDefault());
-    updateSignLink();
+    const updated = typeof s.updated === 'string' && !Number.isNaN(Date.parse(s.updated)) ? s.updated : null;
+    const grew = stats.total && s.total > stats.total;
+    stats = { total: s.total, countries: clean, updated };
+    renderStats(grew);
   }
 
   // ---------- globe ----------
@@ -91,70 +63,42 @@
     for (const [lng, lat] of best) { x += lng; y += lat; }
     return { lng: x / best.length, lat: y / best.length };
   }
-
-  function focusCountry(code) {
-    selected = code || null;
-    if (!globe) return;
+  function focusCountry(code, ms = 1400) {
+    if (!globe || !code) return;
     const f = features.find((ft) => ft.properties.c === code);
-    if (f) {
-      globe.controls().autoRotate = false;
-      globe.pointOfView({ ...centroid(f), altitude: 1.9 }, 1200);
-    }
-    refreshGlobe();
+    if (f) globe.pointOfView({ ...centroid(f), altitude: 2.0 }, ms);
   }
-
   function capColor(f) {
-    const code = f.properties.c;
     if (f === hovered) return '#e8ffb8';
-    return heat(countOf(code), maxCount());
+    return heat(countOf(f.properties.c), maxCount());
   }
   function altitude(f) {
     const n = countOf(f.properties.c);
     const max = maxCount();
     const t = n && max ? Math.log1p(n) / Math.log1p(max) : 0;
-    let a = 0.008 + t * 0.07;
-    if (f === hovered) a += 0.012;
-    return a;
+    return 0.008 + t * 0.07 + (f === hovered ? 0.012 : 0);
   }
-
   function refreshGlobe() {
     if (!globe) return;
-    globe
-      .polygonCapColor(capColor)
-      .polygonAltitude(altitude)
-      .polygonStrokeColor((f) => (f.properties.c === selected ? '#ffffff' : '#000000'));
+    globe.polygonCapColor(capColor).polygonAltitude(altitude)
+      .polygonStrokeColor((f) => (f.properties.c === mine ? '#ffffff' : '#000000'));
   }
-
   function initGlobe() {
     const el = $('globe');
     if (typeof window.Globe !== 'function') throw new Error('globe library missing');
     globe = window.Globe()(el)
       .backgroundColor('rgba(0,0,0,0)')
-      .showAtmosphere(true)
-      .atmosphereColor('#76b900')
-      .atmosphereAltitude(0.2)
+      .showAtmosphere(true).atmosphereColor('#76b900').atmosphereAltitude(0.2)
       .showGraticules(true)
       .polygonsData(features)
       .polygonSideColor(() => 'rgba(118,185,0,0.22)')
       .polygonsTransitionDuration(600)
       .polygonLabel((f) => {
         const n = countOf(f.properties.c);
-        const name = countries[f.properties.c] || f.properties.n;
-        return `<div class="globe-tip"><b>${esc(name)}</b><span>${fmt.format(n)}</span> signature${n === 1 ? '' : 's'}</div>`;
+        return `<div class="globe-tip"><b>${esc(nameOf(f.properties.c) || f.properties.n)}</b><span>${fmt.format(n)}</span> signature${n === 1 ? '' : 's'}</div>`;
       })
-      .onPolygonHover((f) => {
-        hovered = f || null;
-        el.style.cursor = f ? 'pointer' : '';
-        refreshGlobe();
-      })
-      .onPolygonClick((f) => {
-        const code = f.properties.c;
-        if (countries[code]) {
-          $('country').value = code;
-          updateSignLink();
-          focusCountry(code);
-        }
-      });
+      .onPolygonHover((f) => { hovered = f || null; el.style.cursor = f ? 'pointer' : ''; refreshGlobe(); })
+      .onPolygonClick((f) => { globe.controls().autoRotate = false; focusCountry(f.properties.c, 900); });
 
     const mat = globe.globeMaterial();
     mat.color.set('#070707');
@@ -162,33 +106,42 @@
     if ('shininess' in mat) mat.shininess = 6;
 
     const c = globe.controls();
-    c.autoRotate = true;
-    c.autoRotateSpeed = 0.45;
-    c.enableZoom = true;
-    c.minDistance = 160;
-    c.maxDistance = 520;
+    c.autoRotate = true; c.autoRotateSpeed = 0.45;
+    c.minDistance = 160; c.maxDistance = 520;
     globe.pointOfView({ lat: 25, lng: -30, altitude: 2.3 }, 0);
 
-    const size = () => {
-      const w = el.clientWidth;
-      const h = el.clientHeight || w;
-      globe.width(w).height(h);
-    };
+    const size = () => globe.width(el.clientWidth).height(el.clientHeight || el.clientWidth);
     size();
     new ResizeObserver(size).observe(el);
     refreshGlobe();
   }
 
-  // ---------- stats ----------
-  function renderStats() {
-    $('total').textContent = fmt.format(stats.total || 0);
-    const entries = Object.entries(stats.countries).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  // ---------- render ----------
+  let shownTotal = 0;
+  function animateTotal(to) {
+    const from = shownTotal;
+    shownTotal = to;
+    if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { $('total').textContent = fmt.format(to); return; }
+    const t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / 700);
+      $('total').textContent = fmt.format(Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3))));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  function renderStats(grew) {
+    animateTotal(stats.total);
+    if (grew) {
+      const c = document.querySelector('.counter-main');
+      c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump');
+    }
+    const entries = Object.entries(stats.countries).sort((a, b) => b[1] - a[1]);
     $('ncountries').textContent = fmt.format(entries.length);
     if (stats.updated) {
-      const d = new Date(stats.updated);
-      $('updated').textContent = `Count last updated ${d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`;
+      $('updated').textContent = `Last signature ${new Date(stats.updated).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`;
     }
-
     const board = $('board');
     board.replaceChildren();
     if (!entries.length) {
@@ -200,8 +153,9 @@
       const top = entries[0][1];
       entries.slice(0, 12).forEach(([code, n], i) => {
         const li = document.createElement('li');
+        if (code === mine) li.className = 'is-mine';
         const rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = String(i + 1).padStart(2, '0');
-        const name = document.createElement('span'); name.className = 'name'; name.textContent = countries[code] || code;
+        const name = document.createElement('span'); name.className = 'name'; name.textContent = nameOf(code);
         const count = document.createElement('span'); count.className = 'count'; count.textContent = fmt.format(n);
         const bar = document.createElement('span'); bar.className = 'bar';
         const fill = document.createElement('i'); fill.style.width = `${Math.max(2, (n / top) * 100)}%`;
@@ -213,42 +167,162 @@
     refreshGlobe();
   }
 
-  async function loadStats() {
+  // ---------- live updates: SSE, with polling fallback ----------
+  function setLive(on) { $('live-dot').classList.toggle('on', on); }
+  let pollTimer = null;
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(() => { if (!document.hidden) refreshStats(); }, 20000);
+  }
+  function startLive() {
+    if (!('EventSource' in window)) { startPolling(); return; }
+    let es = null;
+    let failures = 0;
+    const open = () => {
+      es = new EventSource('/api/live');
+      es.onopen = () => { failures = 0; setLive(true); };
+      es.onmessage = (e) => { try { ingest(JSON.parse(e.data)); } catch (_) {} };
+      es.onerror = () => {
+        setLive(false);
+        if (++failures >= 4) { es.close(); startPolling(); }
+      };
+    };
+    open();
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { es && es.close(); setLive(false); }
+      else if (!es || es.readyState === 2) { failures = 0; open(); refreshStats(); }
+    });
+  }
+
+  async function refreshStats() {
     try {
-      const bucket = Math.floor(Date.now() / POLL_MS);
-      const r = await fetch(`stats.json?v=${bucket}`, { cache: 'no-cache' });
-      if (!r.ok) throw new Error(r.status);
+      const r = await fetch('/api/stats', { cache: 'no-store', credentials: 'same-origin' });
+      if (!r.ok) throw new Error(String(r.status));
       const s = await r.json();
-      if (s && Number.isSafeInteger(s.total) && s.total >= 0 && s.countries && typeof s.countries === 'object') {
-        // Accept only known ISO codes with non-negative integer counts.
-        const clean = Object.create(null);
-        for (const [code, n] of Object.entries(s.countries)) {
-          if (Object.prototype.hasOwnProperty.call(countries, code) && Number.isSafeInteger(n) && n > 0) clean[code] = n;
-        }
-        const updated = typeof s.updated === 'string' && !Number.isNaN(Date.parse(s.updated)) ? s.updated : null;
-        stats = { total: s.total, countries: clean, updated };
-        renderStats();
+      ingest(s);
+      return s;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---------- signing ----------
+  function setButton(label, enabled) {
+    $('sign-label').textContent = label;
+    $('sign-btn').disabled = !enabled;
+  }
+  function showError(msg) {
+    const el = $('sign-error');
+    el.textContent = msg || '';
+    el.hidden = !msg;
+  }
+  function showSigned(sub) {
+    $('sign-form').hidden = true;
+    $('signed').hidden = false;
+    if (sub) $('signed-sub').textContent = sub;
+  }
+
+  window.fjTurnstileReady = () => { if (sitekey) renderTurnstile(); };
+  function renderTurnstile() {
+    if (tsWidget !== null || !window.turnstile || !sitekey || !$('sign-form') || $('sign-form').hidden) return;
+    tsWidget = window.turnstile.render('#turnstile', {
+      sitekey,
+      action: 'sign',
+      theme: 'dark',
+      appearance: 'interaction-only',
+      callback: (t) => { tsToken = t; tsWaiters.splice(0).forEach((fn) => fn(t)); if (!submitting) setButton('Sign the petition', true); },
+      'expired-callback': () => { tsToken = null; },
+      'before-interactive-callback': () => {
+        tsInteractive = true;
+        setButton('Tick "Verify you are human" above', false);
+        $('turnstile').scrollIntoView({ block: 'center', behavior: 'smooth' });
+      },
+      'after-interactive-callback': () => { tsInteractive = false; },
+      'error-callback': (code) => { tsToken = null; tsErr = String(code || '').replace(/[^0-9a-z]/gi, '').slice(0, 12); tsWaiters.splice(0).forEach((fn) => fn(null)); if (!submitting) setButton('Sign the petition', true); return true; },
+    });
+    if (!submitting) setButton('Sign the petition', true);
+  }
+  function waitForToken(ms) {
+    if (tsToken) return Promise.resolve(tsToken);
+    return new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), ms);
+      tsWaiters.push((tok) => { clearTimeout(t); resolve(tok); });
+    });
+  }
+
+  async function sign() {
+    if (submitting) return;
+    submitting = true;
+    showError('');
+    setButton(tsInteractive ? 'Tick "Verify you are human" above' : "Verifying you're human…", false);
+    try {
+      const token = await waitForToken(180000);
+      if (!token) throw Object.assign(new Error(), { userMsg: `We couldn't verify you're human. Please refresh and try again.${tsErr ? ` (code ${tsErr})` : ''}` });
+      setButton('Signing…', false);
+      const r = await fetch('/api/sign', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, consent: true, reason: $('reason').value.slice(0, 280) }),
+      });
+      tsToken = null; // single-use
+      let d = {};
+      try { d = await r.json(); } catch (_) {}
+      if (r.ok && d.ok) {
+        try { localStorage.setItem(LS_KEY, '1'); } catch (_) {}
+        const where = nameOf(d.country);
+        showSigned(`You're signature #${fmt.format(d.number)}${where ? ` from ${where}` : ''}. Watch the map light up.`);
+        if (d.country) focusCountry(d.country);
+        refreshStats();
+        return;
       }
+      if (d.error === 'already_signed') {
+        try { localStorage.setItem(LS_KEY, '1'); } catch (_) {}
+        showSigned('You already signed from this browser.');
+        return;
+      }
+      throw Object.assign(new Error(), { userMsg: d.message || 'Something went wrong. Please try again.' });
     } catch (e) {
-      if (!stats.updated) $('updated').textContent = 'Live count unavailable right now.';
+      showError(e.userMsg || 'Network error. Please check your connection and try again.');
+      if (window.turnstile && tsWidget !== null) window.turnstile.reset(tsWidget);
+      setButton('Sign the petition', true);
+    } finally {
+      submitting = false;
     }
   }
 
   // ---------- boot ----------
   async function boot() {
+    $('reason').addEventListener('input', (e) => { $('reason-count').textContent = String([...e.target.value].length); });
+    $('sign-btn').addEventListener('click', sign);
+
     const [cRes, gRes] = await Promise.all([fetch('countries.json'), fetch('countries.geojson')]);
     countries = await cRes.json();
     features = (await gRes.json()).features;
-    buildPicker();
-    try {
-      initGlobe();
-    } catch (e) {
+
+    try { initGlobe(); } catch (_) {
       $('globe').hidden = true;
       document.querySelector('.legend').hidden = true;
       $('globe-fallback').hidden = false;
     }
-    await loadStats();
-    setInterval(() => { if (!document.hidden) loadStats(); }, POLL_MS);
+
+    const s = await refreshStats();
+    if (s && s.you) {
+      mine = typeof s.you.country === 'string' && nameOf(s.you.country) ? s.you.country : null;
+      $('where').textContent = mine ? nameOf(mine) : 'an undetected location';
+      if (mine) { focusCountry(mine, 1800); refreshGlobe(); }
+      if (s.you.signed) showSigned('You already signed from this browser. Thank you!');
+    } else {
+      $('where').textContent = 'your location';
+    }
+    if (s && typeof s.sitekey === 'string' && /^[0-9A-Za-z_-]{10,64}$/.test(s.sitekey)) {
+      sitekey = s.sitekey;
+      renderTurnstile();
+    } else if (!s) {
+      setButton('Temporarily unavailable', false);
+      showError('The petition server is unreachable right now. Please try again shortly.');
+    }
+    startLive();
   }
 
   boot();

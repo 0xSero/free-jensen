@@ -1,0 +1,11 @@
+name = "free-jensen"
+pages_build_output_dir = "site"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "free-jensen"
+database_id = "2aaa88ea-a9e5-4d2b-ad5d-c55c21fee4c1"
+
+[vars]
+TURNSTILE_SITEKEY = "0x4AAAAAAGAPrMFnHg_ZEROL"
