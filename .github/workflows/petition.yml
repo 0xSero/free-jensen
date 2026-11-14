@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "*/10 * * * *" # backstop sweep for anything a dropped/queued run missed
+    - cron: "17,47 * * * *" # backstop sweep only; the issue trigger does the real work
   workflow_dispatch:
 
 # Exactly one run at a time. Signatures are processed strictly in sequence.
